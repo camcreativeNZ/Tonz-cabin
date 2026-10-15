@@ -251,9 +251,12 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
           err.textContent='Sorry, that time was just taken. Please pick another.';
           btn.disabled=false;btn.textContent='Book it';renderSlots();
         }else{
-          err.textContent='Something went wrong. Please try again.';
-          btn.disabled=false;btn.textContent='Book it';
+          err.textContent='Something went wrong. Please check the times and try again.';
+          btn.disabled=false;btn.textContent='Book it';renderSlots();
         }
+      }).catch(function(){
+        err.textContent='Could not reach the server. Please check your connection and try again.';
+        btn.disabled=false;btn.textContent='Book it';renderSlots();
       });
     };
   }
