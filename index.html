@@ -68,6 +68,12 @@ input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
 .err{color:var(--red);font-size:.9rem;margin-top:8px;min-height:1.2em}
 .ok{text-align:center}
 .ok .tick{font-size:3rem;color:var(--green)}
+.btns.col{flex-direction:column}
+a.btn{display:block;text-align:center;text-decoration:none}
+.btn.cal{background:#fff;border:2px solid var(--brand);color:var(--brand)}
+.chk{display:flex;gap:10px;align-items:flex-start;font-weight:500;font-size:.9rem;margin-top:14px;line-height:1.35}
+.chk input{width:20px;height:20px;margin:1px 0 0;flex:none;padding:0}
+.note{font-size:.9rem;color:var(--muted);margin:0 0 10px}
 .demo{background:#fff4d6;border-bottom:1px solid #ecd48a;text-align:center;font-size:.85rem;padding:8px;display:none}
 footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30px}
 </style>
@@ -160,15 +166,34 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
       var all=localAll();return Object.keys(all).filter(function(k){return k.indexOf(date+'|')===0}).map(function(k){return k.split('|')[1]});
     });
   }
-  function book(date,time,name,phone){
+  function book(date,time,name,phone,sms){
     if(demoMode){
       var all=localAll(),k=date+'|'+time;
       if(all[k]) return Promise.resolve({ok:false,status:409});
       all[k]={name:name,phone:phone};localStorage.setItem(localKey(),JSON.stringify(all));
       return Promise.resolve({ok:true});
     }
-    return fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,time:time,name:name,phone:phone})})
-      .then(function(r){return {ok:r.ok,status:r.status}});
+    return fetch('/api/bookings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,time:time,name:name,phone:phone,sms:!!sms})})
+      .then(function(r){
+        return r.json().catch(function(){return {}}).then(function(j){return {ok:r.ok,status:r.status,error:j&&j.error}});
+      });
+  }
+
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+
+  // ---- text reminders: only offered when the site owner has set them up ----
+  var smsAvailable = false;
+  fetch('/api/bookings?config=1',{cache:'no-store'}).then(function(r){return r.ok?r.json():{}}).then(function(j){smsAvailable=!!j.sms}).catch(function(){});
+
+  // Accepts what a customer types and says whether it is a NZ mobile (or another international number)
+  function normPhone(raw){
+    var p=String(raw||'').trim().replace(/[\s\-().]/g,'');
+    if(p.indexOf('00')===0)p='+'+p.slice(2);
+    else if(p.charAt(0)==='0')p='+64'+p.slice(1);
+    else if(/^64\d/.test(p))p='+'+p;
+    if(!/^\+\d{8,15}$/.test(p))return null;
+    if(p.indexOf('+64')===0&&!/^\+642\d{7,9}$/.test(p))return null;
+    return p;
   }
 
   // ---- calendar ----
@@ -254,6 +279,47 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
     });
   }
 
+  // ---- add to calendar ----
+  var LOCATION='197 Dixon Street, Masterton, New Zealand';
+  function dur(t){return t<'12:00'?15:20}
+  function addMin(t,n){var m=(+t.slice(0,2))*60+(+t.slice(3))+n;return pad(Math.floor(m/60))+':'+pad(m%60)}
+  function stamp(d,t){return d.replace(/-/g,'')+'T'+t.replace(':','')+'00'}
+  function gcalUrl(date,time,name){
+    return 'https://calendar.google.com/calendar/render?action=TEMPLATE'+
+      '&text='+encodeURIComponent('Haircut at Tonz Cabin')+
+      '&dates='+stamp(date,time)+'/'+stamp(date,addMin(time,dur(time)))+
+      '&ctz='+encodeURIComponent(TZ)+
+      '&location='+encodeURIComponent(LOCATION)+
+      '&details='+encodeURIComponent('Booked under the name '+name+'.');
+  }
+  function icsEsc(s){return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n')}
+  function icsText(date,time,name){
+    var n=new Date();
+    var utc=n.getUTCFullYear()+pad(n.getUTCMonth()+1)+pad(n.getUTCDate())+'T'+pad(n.getUTCHours())+pad(n.getUTCMinutes())+pad(n.getUTCSeconds())+'Z';
+    return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Tonz Cabin//Booking//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+      'BEGIN:VTIMEZONE','TZID:Pacific/Auckland',
+      'BEGIN:DAYLIGHT','TZOFFSETFROM:+1200','TZOFFSETTO:+1300','TZNAME:NZDT','DTSTART:19700927T020000','RRULE:FREQ=YEARLY;BYMONTH=9;BYDAY=-1SU','END:DAYLIGHT',
+      'BEGIN:STANDARD','TZOFFSETFROM:+1300','TZOFFSETTO:+1200','TZNAME:NZST','DTSTART:19700405T030000','RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=1SU','END:STANDARD',
+      'END:VTIMEZONE',
+      'BEGIN:VEVENT',
+      'UID:'+date+'-'+time.replace(':','')+'-'+Math.random().toString(36).slice(2,8)+'@tonzcabin',
+      'DTSTAMP:'+utc,
+      'DTSTART;TZID=Pacific/Auckland:'+stamp(date,time),
+      'DTEND;TZID=Pacific/Auckland:'+stamp(date,addMin(time,dur(time))),
+      'SUMMARY:'+icsEsc('Haircut at Tonz Cabin'),
+      'LOCATION:'+icsEsc(LOCATION),
+      'DESCRIPTION:'+icsEsc('Booked under the name '+name+'.'),
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:Haircut at Tonz Cabin','TRIGGER:-PT1H','END:VALARM',
+      'END:VEVENT','END:VCALENDAR'].join('\r\n')+'\r\n';
+  }
+  function downloadIcs(date,time,name){
+    var blob=new Blob([icsText(date,time,name)],{type:'text/calendar;charset=utf-8'});
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download='tonz-cabin-haircut.ics';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){a.remove();URL.revokeObjectURL(a.href)},500);
+  }
+
   // ---- booking modal ----
   var modal=document.getElementById('modal'),sheet=document.getElementById('sheet');
   function closeModal(){modal.classList.remove('show')}
@@ -263,6 +329,7 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
     sheet.innerHTML='<h3>Confirm your booking</h3><p class="when">'+prettyDate(date)+' at <strong>'+fmt(time)+'</strong></p>'+
       '<label for="nm">Your name</label><input id="nm" autocomplete="name" placeholder="e.g. Sam Smith">'+
       '<label for="ph">Phone (optional)</label><input id="ph" type="tel" autocomplete="tel" placeholder="So we can reach you if needed">'+
+      (smsAvailable?'<label class="chk" for="sms"><input type="checkbox" id="sms"><span>Text me a reminder 2 hours before my appointment (uses the mobile number above)</span></label>':'')+
       '<div class="err" id="err"></div>'+
       '<div class="btns"><button class="btn ghost" id="cx">Cancel</button><button class="btn primary" id="ok">Book it</button></div>';
     modal.classList.add('show');
@@ -270,19 +337,27 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
     document.getElementById('cx').onclick=closeModal;
     document.getElementById('ok').onclick=function(){
       var name=nm.value.trim(),phone=document.getElementById('ph').value.trim(),err=document.getElementById('err'),btn=this;
+      var smsBox=document.getElementById('sms'),wantSms=!!(smsBox&&smsBox.checked);
       if(name.length<2){err.textContent='Please enter your name.';return}
+      if(wantSms&&!normPhone(phone)){err.textContent='To get a text reminder, please enter a New Zealand mobile number (like 021 123 4567).';return}
       btn.disabled=true;btn.textContent='Booking…';
-      book(date,time,name,phone).then(function(r){
+      book(date,time,name,phone,wantSms).then(function(r){
         if(r.ok){
-          sheet.innerHTML='<div class="ok"><div class="tick">&#10003;</div><h3>You\'re booked, '+name.replace(/</g,'&lt;')+'!</h3>'+
-            '<p class="when">'+prettyDate(date)+' at '+fmt(time)+'</p><div class="btns"><button class="btn primary" id="done">Done</button></div></div>';
+          sheet.innerHTML='<div class="ok"><div class="tick">&#10003;</div><h3>You\'re booked, '+esc(name)+'!</h3>'+
+            '<p class="when">'+prettyDate(date)+' at '+fmt(time)+'</p>'+
+            (wantSms?'<p class="note">We\'ll text you a reminder 2 hours before.</p>':'')+
+            '<div class="btns col"><a class="btn cal" id="gcal" target="_blank" rel="noopener">Add to Google Calendar</a>'+
+            '<button type="button" class="btn cal" id="ics">Add to Apple / Outlook calendar</button>'+
+            '<button type="button" class="btn primary" id="done">Done</button></div></div>';
+          document.getElementById('gcal').href=gcalUrl(date,time,name);
+          document.getElementById('ics').onclick=function(){downloadIcs(date,time,name)};
           document.getElementById('done').onclick=closeModal;
           renderSlots();
         }else if(r.status===409){
           err.textContent='Sorry, that time was just taken. Please pick another.';
           btn.disabled=false;btn.textContent='Book it';renderSlots();
         }else{
-          err.textContent='Something went wrong. Please check the times and try again.';
+          err.textContent=(r.status===400&&r.error)?r.error:'Something went wrong. Please check the times and try again.';
           btn.disabled=false;btn.textContent='Book it';renderSlots();
         }
       }).catch(function(){

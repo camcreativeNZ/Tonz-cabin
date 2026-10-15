@@ -180,7 +180,7 @@ function render(){
   var html='',last='';
   rows.forEach(function(b){
     if(b.date!==last){if(last)html+='</div>';html+='<div class="card day"><h3>'+pretty(b.date)+'</h3>';last=b.date}
-    html+='<div class="row"><div><strong>'+fmt(b.time)+'</strong> · '+esc(b.name)+(b.phone?'<small>'+esc(b.phone)+'</small>':'')+'</div>'+
+    html+='<div class="row"><div><strong>'+fmt(b.time)+'</strong> · '+esc(b.name)+(b.phone?'<small>'+esc(b.phone)+(b.sms?' · text reminder '+(b.reminded?'sent':'queued'):'')+'</small>':'')+'</div>'+
       '<button class="del" data-d="'+b.date+'" data-t="'+b.time+'">Cancel</button></div>';
   });
   el.innerHTML=html+'</div>';
@@ -203,8 +203,8 @@ function csvCell(v){
   return '"'+v.replace(/"/g,'""')+'"';
 }
 $('csvBtn').onclick=function(){
-  var lines=['Date,Time,Name,Phone'];
-  filtered().forEach(function(b){lines.push([csvCell(b.date),csvCell(fmt(b.time)),csvCell(b.name),csvCell(b.phone)].join(','))});
+  var lines=['Date,Time,Name,Phone,Text reminder'];
+  filtered().forEach(function(b){lines.push([csvCell(b.date),csvCell(fmt(b.time)),csvCell(b.name),csvCell(b.phone),csvCell(b.sms?(b.reminded?'sent':'queued'):'')].join(','))});
   var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
   var a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download='tonz-cabin-bookings-'+todayStr+'.csv';
