@@ -80,7 +80,7 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
     </div>
     <div class="grid" id="dows"></div>
     <div class="grid" id="days"></div>
-    <p class="hint">Green days are open for booking (Tuesday to Friday).</p>
+    <p class="hint">Green days are open for booking (Tuesday to Friday). Fridays are mornings only.</p>
   </section>
 
   <section class="card">
@@ -215,7 +215,12 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
         html+='</div>';
       }
       group('Morning · 15 min',SLOTS.morning);
-      group('Afternoon · 20 min',SLOTS.afternoon);
+      var sp=sel.split('-').map(Number);
+      if(dowOf(sp[0],sp[1]-1,sp[2])===5){
+        html+='<p class="hint">Fridays are mornings only.</p>';
+      }else{
+        group('Afternoon · 20 min',SLOTS.afternoon);
+      }
       area.innerHTML=html;
       Array.prototype.forEach.call(area.querySelectorAll('.slot.free'),function(b){
         b.onclick=function(){openModal(sel,b.getAttribute('data-t'))};
