@@ -1,8 +1,11 @@
 import { getStore } from "@netlify/blobs";
+import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
 
-export const config = { path: "/api/bookings" };
+export const config = { path: ["/api/bookings", "/api/admin"] };
 
 const OPEN_DOW = [2, 3, 4, 5]; // Tue-Fri
+const MAX_FAILS = 5;
+const LOCK_MS = 15 * 60 * 1000;
 const pad = (n) => String(n).padStart(2, "0");
 
 function validSlots() {
@@ -30,28 +33,96 @@ const validDate = (d) => {
   return dt.getUTCMonth() === m - 1 && OPEN_DOW.includes(dt.getUTCDay());
 };
 
-const isAdmin = (req) => {
-  const pin = process.env.ADMIN_PIN;
-  return !!pin && req.headers.get("x-admin-pin") === pin;
+// ---------- admin PIN ----------
+// The PIN is set from the admin page the first time it is opened and stored
+// as a salted hash. If an ADMIN_PIN environment variable exists in Netlify,
+// that takes priority instead.
+const settings = () => getStore({ name: "settings", consistency: "strong" });
+const hashPin = (pin, salt) => scryptSync(pin, salt, 32).toString("hex");
+const safeEqual = (a, b) => {
+  const A = Buffer.from(String(a)), B = Buffer.from(String(b));
+  return A.length === B.length && timingSafeEqual(A, B);
 };
+const validNewPin = (p) => typeof p === "string" && p.length >= 4 && p.length <= 40;
 
-export default async (req) => {
-  try {
-    return await handle(req);
-  } catch (e) {
-    console.error("bookings error:", e);
-    return json({ error: "Server error", detail: String((e && e.message) || e) }, 500);
+async function pinIsSet() {
+  if (process.env.ADMIN_PIN) return true;
+  return !!(await settings().get("admin", { type: "json" }));
+}
+
+async function checkPin(pin) {
+  if (!pin) return false;
+  if (process.env.ADMIN_PIN) return safeEqual(pin, process.env.ADMIN_PIN);
+  const v = await settings().get("admin", { type: "json" });
+  if (!v) return false;
+  return safeEqual(hashPin(String(pin), v.salt), v.hash);
+}
+
+// Returns { ok: true } or { resp } (a ready-made error response).
+// Five wrong PINs from one address locks that address out for 15 minutes.
+async function authorize(req) {
+  const ip = (req.headers.get("x-nf-client-connection-ip") || "unknown").replace(/[^a-zA-Z0-9.:_-]/g, "_");
+  const key = `lock/${ip}`;
+  const st = settings();
+  const rec = await st.get(key, { type: "json" });
+  const now = Date.now();
+  const active = rec && now - rec.first < LOCK_MS;
+  if (active && rec.count >= MAX_FAILS) return { resp: json({ error: "Too many wrong PINs. Try again in 15 minutes." }, 429) };
+  if (await checkPin(req.headers.get("x-admin-pin"))) {
+    if (rec) await st.delete(key);
+    return { ok: true };
   }
-};
+  const next = active ? rec : { count: 0, first: now };
+  next.count++;
+  await st.setJSON(key, next);
+  return { resp: json({ error: "Unauthorized" }, 401) };
+}
 
-async function handle(req) {
+async function readBody(req) {
+  try { return await req.json(); } catch { return null; }
+}
+
+async function handleAdmin(req) {
+  if (req.method === "GET") return json({ pinSet: await pinIsSet(), managedByNetlify: !!process.env.ADMIN_PIN });
+
+  if (req.method === "POST") {
+    const body = await readBody(req);
+    if (!body) return json({ error: "Bad request" }, 400);
+    const st = settings();
+
+    if (body.action === "setup") {
+      if (await pinIsSet()) return json({ error: "A PIN is already set." }, 403);
+      if (!validNewPin(body.pin)) return json({ error: "PIN must be 4 to 40 characters." }, 400);
+      const salt = randomBytes(16).toString("hex");
+      await st.setJSON("admin", { salt, hash: hashPin(body.pin, salt), updatedAt: new Date().toISOString() });
+      return json({ ok: true }, 201);
+    }
+
+    if (body.action === "change") {
+      if (process.env.ADMIN_PIN) return json({ error: "Your PIN is managed in Netlify (ADMIN_PIN). Remove that variable to change it here." }, 400);
+      const auth = await authorize(req);
+      if (!auth.ok) return auth.resp;
+      if (!validNewPin(body.pin)) return json({ error: "PIN must be 4 to 40 characters." }, 400);
+      const salt = randomBytes(16).toString("hex");
+      await st.setJSON("admin", { salt, hash: hashPin(body.pin, salt), updatedAt: new Date().toISOString() });
+      return json({ ok: true });
+    }
+
+    return json({ error: "Unknown action" }, 400);
+  }
+  return json({ error: "Method not allowed" }, 405);
+}
+
+// ---------- bookings ----------
+async function handleBookings(req) {
   const store = getStore({ name: "bookings", consistency: "strong" });
   const url = new URL(req.url);
 
   if (req.method === "GET") {
     // Admin: list everything with names
     if (url.searchParams.get("all") === "1") {
-      if (!isAdmin(req)) return json({ error: "Unauthorized" }, 401);
+      const auth = await authorize(req);
+      if (!auth.ok) return auth.resp;
       const { blobs } = await store.list();
       const rows = [];
       for (const b of blobs) {
@@ -60,7 +131,7 @@ async function handle(req) {
         if (v) rows.push({ date, time, name: v.name, phone: v.phone || "" });
       }
       rows.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-      return json({ bookings: rows.filter((r) => r.date >= nzToday()) });
+      return json({ bookings: rows.filter((r) => r.date >= nzToday()), today: nzToday() });
     }
     // Public: only which times are taken (no names)
     const date = url.searchParams.get("date");
@@ -70,8 +141,8 @@ async function handle(req) {
   }
 
   if (req.method === "POST") {
-    let body;
-    try { body = await req.json(); } catch { return json({ error: "Bad request" }, 400); }
+    const body = await readBody(req);
+    if (!body) return json({ error: "Bad request" }, 400);
     const { date, time } = body;
     const name = String(body.name || "").trim().slice(0, 60);
     const phone = String(body.phone || "").trim().slice(0, 30);
@@ -93,9 +164,10 @@ async function handle(req) {
   }
 
   if (req.method === "DELETE") {
-    if (!isAdmin(req)) return json({ error: "Unauthorized" }, 401);
-    let body;
-    try { body = await req.json(); } catch { return json({ error: "Bad request" }, 400); }
+    const auth = await authorize(req);
+    if (!auth.ok) return auth.resp;
+    const body = await readBody(req);
+    if (!body) return json({ error: "Bad request" }, 400);
     if (!validDate(body.date) || !SLOTS.includes(body.time)) return json({ error: "Invalid" }, 400);
     await store.delete(`${body.date}/${body.time}`);
     return json({ ok: true });
@@ -103,3 +175,13 @@ async function handle(req) {
 
   return json({ error: "Method not allowed" }, 405);
 }
+
+export default async (req) => {
+  try {
+    const path = new URL(req.url).pathname;
+    return path === "/api/admin" ? await handleAdmin(req) : await handleBookings(req);
+  } catch (e) {
+    console.error("bookings error:", e);
+    return json({ error: "Server error", detail: String((e && e.message) || e) }, 500);
+  }
+};
