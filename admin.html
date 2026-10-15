@@ -7,64 +7,221 @@
 <title>Tonz Cabin – Barber view</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f6f3ee;color:#1f2328}
-header{background:#2b2b2b;color:#fff;text-align:center;padding:18px}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f6f3ee;color:#1f2328;line-height:1.4}
+header{background:#2b2b2b;color:#fff;text-align:center;padding:18px;position:relative}
 header h1{margin:0;font-size:1.4rem;letter-spacing:.06em;text-transform:uppercase}
-header span{color:#b8873b}
-main{max-width:640px;margin:0 auto;padding:16px}
+header h1 span{color:#b8873b}
+header a{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#d8d3c8;font-size:.85rem;text-decoration:none}
+main{max-width:680px;margin:0 auto;padding:16px}
 .card{background:#fff;border:1px solid #e4dfd6;border-radius:14px;padding:16px;margin-bottom:14px}
-input{width:100%;padding:13px;border:1px solid #e4dfd6;border-radius:10px;font-size:1rem}
-button{padding:12px 16px;border:0;border-radius:10px;font-weight:700;font-size:1rem;cursor:pointer}
-.go{background:#1f9d55;color:#fff;margin-top:10px;width:100%}
+.card h2{margin:0 0 8px;font-size:1.1rem}
+.card p{margin:0 0 10px;color:#6b7177;font-size:.92rem}
+label{display:block;font-size:.85rem;font-weight:600;margin:10px 0 4px}
+input,select{width:100%;padding:13px;border:1px solid #e4dfd6;border-radius:10px;font-size:1rem;font-family:inherit;background:#fff}
+button{padding:12px 16px;border:0;border-radius:10px;font-weight:700;font-size:.95rem;cursor:pointer;font-family:inherit}
+.go{background:#1f9d55;color:#fff;margin-top:12px;width:100%}
+.btn2{background:#eee;color:#1f2328}
+.dark{background:#2b2b2b;color:#fff}
 .del{background:#fbe6e6;color:#9b2121;padding:8px 12px;font-size:.85rem}
-h3{margin:18px 0 8px;font-size:1rem}
+.bar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.bar .full{grid-column:1/-1}
+.day h3{margin:0 0 6px;font-size:1rem}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #eee}
 .row small{color:#6b7177;display:block}
-.err{color:#d63b3b;margin-top:8px}
+.sum{font-weight:700;margin:6px 0 0}
+.err{color:#d63b3b;margin-top:8px;min-height:1.2em;font-size:.92rem}
+.okmsg{color:#116b38;margin-top:8px;font-size:.92rem}
+.printonly{display:none}
+details summary{cursor:pointer;font-weight:700}
+@media print{
+  body{background:#fff}
+  header,.noprint,.del{display:none!important}
+  .printonly{display:block;margin:0 0 12px}
+  .card{border:0;padding:0 0 6px;margin:0;break-inside:avoid}
+  main{padding:0}
+}
 </style>
 </head>
 <body>
-<header><h1>Tonz <span>Cabin</span> · Barber view</h1></header>
+<header><a href="/">&larr; Booking page</a><h1>Tonz <span>Cabin</span> · Barber view</h1></header>
 <main>
-  <div class="card" id="login">
-    <label for="pin"><strong>Admin PIN</strong></label>
-    <input id="pin" type="password" inputmode="numeric" autocomplete="current-password">
-    <button class="go" id="go">View bookings</button>
-    <div class="err" id="err"></div>
+  <div class="card" id="loading">Loading…</div>
+
+  <div class="card" id="setup" style="display:none">
+    <h2>Set your admin PIN</h2>
+    <p>Choose a PIN (at least 4 characters) to protect this page. Do this now, before sharing the link with anyone else.</p>
+    <label for="sp1">New PIN</label>
+    <input id="sp1" type="password" autocomplete="new-password">
+    <label for="sp2">Type it again</label>
+    <input id="sp2" type="password" autocomplete="new-password">
+    <button class="go" id="setupGo">Save PIN</button>
+    <div class="err" id="setupErr"></div>
   </div>
-  <div id="list"></div>
+
+  <div class="card" id="login" style="display:none">
+    <h2>Barber login</h2>
+    <label for="pin">Admin PIN</label>
+    <input id="pin" type="password" autocomplete="current-password">
+    <button class="go" id="loginGo">View bookings</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+
+  <div id="report" style="display:none">
+    <div class="card noprint">
+      <h2>Upcoming bookings report</h2>
+      <label for="range">Show</label>
+      <select id="range">
+        <option value="7">Next 7 days</option>
+        <option value="14">Next 14 days</option>
+        <option value="30" selected>Next 30 days</option>
+        <option value="all">All upcoming</option>
+      </select>
+      <div class="bar">
+        <button class="dark" id="printBtn">Print / save as PDF</button>
+        <button class="dark" id="csvBtn">Download CSV</button>
+        <button class="btn2" id="refreshBtn">Refresh</button>
+        <button class="btn2" id="logoutBtn">Log out</button>
+      </div>
+      <div class="sum" id="sum"></div>
+    </div>
+
+    <div class="printonly" id="printHead"></div>
+    <div id="list"></div>
+
+    <div class="card noprint">
+      <details>
+        <summary>Change PIN</summary>
+        <div id="changeBox">
+          <label for="cp0">Current PIN</label>
+          <input id="cp0" type="password" autocomplete="current-password">
+          <label for="cp1">New PIN</label>
+          <input id="cp1" type="password" autocomplete="new-password">
+          <button class="go" id="changeGo">Change PIN</button>
+          <div class="err" id="changeErr"></div>
+          <div class="okmsg" id="changeOk"></div>
+        </div>
+      </details>
+    </div>
+  </div>
 </main>
+
 <script>
-var pin='';
+var pin='', all=[], todayStr='';
+function $(id){return document.getElementById(id)}
+function show(id){['loading','setup','login','report'].forEach(function(x){$(x).style.display=x===id?'block':'none'})}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function fmt(t){var h=+t.slice(0,2),m=t.slice(3),s=h>=12?'pm':'am';h=h%12||12;return h+':'+m+' '+s}
 function pretty(s){var p=s.split('-').map(Number);return new Date(Date.UTC(p[0],p[1]-1,p[2])).toLocaleDateString('en-NZ',{weekday:'long',day:'numeric',month:'long',timeZone:'UTC'})}
-function load(){
-  fetch('/api/bookings?all=1',{headers:{'x-admin-pin':pin},cache:'no-store'}).then(function(r){
-    if(r.status===401){document.getElementById('err').textContent='Wrong PIN, or ADMIN_PIN is not set in Netlify yet.';return null}
-    if(!r.ok){document.getElementById('err').textContent='Could not load bookings.';return null}
-    return r.json();
-  }).then(function(j){
-    if(!j)return;
-    document.getElementById('login').style.display='none';
-    var el=document.getElementById('list');
-    if(!j.bookings.length){el.innerHTML='<div class="card">No upcoming bookings.</div>';return}
-    var html='',last='';
-    j.bookings.forEach(function(b){
-      if(b.date!==last){if(last)html+='</div>';html+='<div class="card"><h3 style="margin-top:0">'+pretty(b.date)+'</h3>';last=b.date}
-      html+='<div class="row"><div><strong>'+fmt(b.time)+'</strong> · '+esc(b.name)+(b.phone?'<small>'+esc(b.phone)+'</small>':'')+'</div>'+
-        '<button class="del" data-d="'+b.date+'" data-t="'+b.time+'">Cancel</button></div>';
-    });
-    el.innerHTML=html+'</div>';
-    Array.prototype.forEach.call(el.querySelectorAll('.del'),function(b){
-      b.onclick=function(){
-        if(!confirm('Cancel this booking?'))return;
-        fetch('/api/bookings',{method:'DELETE',headers:{'x-admin-pin':pin,'Content-Type':'application/json'},body:JSON.stringify({date:b.dataset.d,time:b.dataset.t})}).then(load);
-      };
-    });
+function addDays(s,n){var p=s.split('-').map(Number);var d=new Date(Date.UTC(p[0],p[1]-1,p[2]+n));return d.toISOString().slice(0,10)}
+function store(k,v){try{v===null?sessionStorage.removeItem(k):sessionStorage.setItem(k,v)}catch(e){}}
+function recall(k){try{return sessionStorage.getItem(k)||''}catch(e){return ''}}
+
+function api(path,opts){
+  return fetch(path,opts).then(function(r){
+    return r.json().catch(function(){return {}}).then(function(j){return {status:r.status,body:j}});
   });
 }
-document.getElementById('go').onclick=function(){pin=document.getElementById('pin').value;document.getElementById('err').textContent='';load()};
+
+function init(){
+  api('/api/admin',{cache:'no-store'}).then(function(r){
+    if(r.status!==200){show('login');$('loginErr').textContent='Could not reach the booking server. This page only works on your live Netlify site.';return}
+    if(!r.body.pinSet){show('setup');return}
+    var saved=recall('tc-pin');
+    if(saved){pin=saved;loadReport(true)}else show('login');
+  }).catch(function(){show('login');$('loginErr').textContent='Could not reach the booking server. This page only works on your live Netlify site.'});
+}
+
+$('setupGo').onclick=function(){
+  var a=$('sp1').value,b=$('sp2').value,err=$('setupErr');err.textContent='';
+  if(a.length<4){err.textContent='PIN must be at least 4 characters.';return}
+  if(a!==b){err.textContent='The two PINs do not match.';return}
+  api('/api/admin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'setup',pin:a})}).then(function(r){
+    if(r.status===201){pin=a;store('tc-pin',a);loadReport(false)}
+    else err.textContent=r.body.error||'Could not save the PIN.';
+  });
+};
+
+$('loginGo').onclick=function(){
+  pin=$('pin').value;$('loginErr').textContent='';
+  loadReport(false);
+};
+$('pin').addEventListener('keydown',function(e){if(e.key==='Enter')$('loginGo').click()});
+
+function loadReport(silent){
+  api('/api/bookings?all=1',{headers:{'x-admin-pin':pin},cache:'no-store'}).then(function(r){
+    if(r.status===401){store('tc-pin',null);pin='';show('login');if(!silent)$('loginErr').textContent='Wrong PIN. Please try again.';return}
+    if(r.status===429){show('login');$('loginErr').textContent=r.body.error||'Too many attempts. Try again later.';return}
+    if(r.status!==200){show('login');$('loginErr').textContent='Could not load bookings.';return}
+    store('tc-pin',pin);
+    all=r.body.bookings||[];todayStr=r.body.today||'';
+    show('report');render();
+  }).catch(function(){show('login');$('loginErr').textContent='Could not reach the booking server.'});
+}
+
+function filtered(){
+  var v=$('range').value;
+  if(v==='all')return all;
+  var end=addDays(todayStr,+v);
+  return all.filter(function(b){return b.date<=end});
+}
+function rangeLabel(){
+  var v=$('range').value;
+  return v==='all'?'All upcoming bookings':'Next '+v+' days';
+}
+
+function render(){
+  var rows=filtered(),days={};
+  rows.forEach(function(b){days[b.date]=1});
+  var nd=Object.keys(days).length;
+  $('sum').textContent=rows.length+' booking'+(rows.length===1?'':'s')+' across '+nd+' day'+(nd===1?'':'s');
+  $('printHead').innerHTML='<h2 style="margin:0">Tonz Cabin – Upcoming bookings</h2><div>'+esc(rangeLabel())+' · '+rows.length+' booking'+(rows.length===1?'':'s')+' · printed '+esc(new Date().toLocaleString('en-NZ',{timeZone:'Pacific/Auckland'}))+'</div>';
+  var el=$('list');
+  if(!rows.length){el.innerHTML='<div class="card">No bookings in this period.</div>';return}
+  var html='',last='';
+  rows.forEach(function(b){
+    if(b.date!==last){if(last)html+='</div>';html+='<div class="card day"><h3>'+pretty(b.date)+'</h3>';last=b.date}
+    html+='<div class="row"><div><strong>'+fmt(b.time)+'</strong> · '+esc(b.name)+(b.phone?'<small>'+esc(b.phone)+'</small>':'')+'</div>'+
+      '<button class="del" data-d="'+b.date+'" data-t="'+b.time+'">Cancel</button></div>';
+  });
+  el.innerHTML=html+'</div>';
+  Array.prototype.forEach.call(el.querySelectorAll('.del'),function(b){
+    b.onclick=function(){
+      if(!confirm('Cancel this booking?'))return;
+      api('/api/bookings',{method:'DELETE',headers:{'x-admin-pin':pin,'Content-Type':'application/json'},body:JSON.stringify({date:b.dataset.d,time:b.dataset.t})}).then(function(){loadReport(true)});
+    };
+  });
+}
+
+$('range').onchange=render;
+$('refreshBtn').onclick=function(){loadReport(true)};
+$('printBtn').onclick=function(){window.print()};
+$('logoutBtn').onclick=function(){pin='';all=[];store('tc-pin',null);$('pin').value='';show('login')};
+
+function csvCell(v){
+  v=String(v);
+  if(/^[=+\-@\t\r]/.test(v))v="'"+v; // stop spreadsheet formula injection
+  return '"'+v.replace(/"/g,'""')+'"';
+}
+$('csvBtn').onclick=function(){
+  var lines=['Date,Time,Name,Phone'];
+  filtered().forEach(function(b){lines.push([csvCell(b.date),csvCell(fmt(b.time)),csvCell(b.name),csvCell(b.phone)].join(','))});
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download='tonz-cabin-bookings-'+todayStr+'.csv';
+  document.body.appendChild(a);a.click();a.remove();
+};
+
+$('changeGo').onclick=function(){
+  var cur=$('cp0').value,nw=$('cp1').value,err=$('changeErr'),ok=$('changeOk');err.textContent='';ok.textContent='';
+  if(nw.length<4){err.textContent='New PIN must be at least 4 characters.';return}
+  api('/api/admin',{method:'POST',headers:{'Content-Type':'application/json','x-admin-pin':cur},body:JSON.stringify({action:'change',pin:nw})}).then(function(r){
+    if(r.status===200){pin=nw;store('tc-pin',nw);ok.textContent='PIN changed.';$('cp0').value='';$('cp1').value=''}
+    else if(r.status===401)err.textContent='Current PIN is wrong.';
+    else err.textContent=r.body.error||'Could not change the PIN.';
+  });
+};
+
+init();
 </script>
 </body>
 </html>
