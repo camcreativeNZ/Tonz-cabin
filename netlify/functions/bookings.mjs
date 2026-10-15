@@ -77,6 +77,9 @@ async function handle(req) {
     const phone = String(body.phone || "").trim().slice(0, 30);
     if (!validDate(date) || !SLOTS.includes(time) || name.length < 2) return json({ error: "Invalid booking" }, 400);
     if (date < nzToday()) return json({ error: "Date in the past" }, 400);
+    // Fridays are mornings only
+    const [fy, fm, fd] = date.split("-").map(Number);
+    if (new Date(Date.UTC(fy, fm - 1, fd)).getUTCDay() === 5 && time >= "12:00") return json({ error: "Fridays are mornings only" }, 400);
     const key = `${date}/${time}`;
     // Quick check first so a taken slot is rejected even if the library ignores onlyIfNew
     const existing = await store.get(key);
