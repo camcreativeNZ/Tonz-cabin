@@ -36,6 +36,15 @@ const isAdmin = (req) => {
 };
 
 export default async (req) => {
+  try {
+    return await handle(req);
+  } catch (e) {
+    console.error("bookings error:", e);
+    return json({ error: "Server error", detail: String((e && e.message) || e) }, 500);
+  }
+};
+
+async function handle(req) {
   const store = getStore({ name: "bookings", consistency: "strong" });
   const url = new URL(req.url);
 
@@ -68,9 +77,15 @@ export default async (req) => {
     const phone = String(body.phone || "").trim().slice(0, 30);
     if (!validDate(date) || !SLOTS.includes(time) || name.length < 2) return json({ error: "Invalid booking" }, 400);
     if (date < nzToday()) return json({ error: "Date in the past" }, 400);
-    // onlyIfNew makes this atomic: two people can't take the same slot
-    const result = await store.setJSON(`${date}/${time}`, { name, phone, createdAt: new Date().toISOString() }, { onlyIfNew: true });
-    if (!result.modified) return json({ error: "Slot taken" }, 409);
+    const key = `${date}/${time}`;
+    // Quick check first so a taken slot is rejected even if the library ignores onlyIfNew
+    const existing = await store.get(key);
+    if (existing !== null && existing !== undefined) return json({ error: "Slot taken" }, 409);
+    // onlyIfNew stops two people grabbing the same slot at the same instant.
+    // Some library versions return nothing here, so only treat an explicit
+    // modified:false as "taken"; anything else means the write succeeded.
+    const result = await store.setJSON(key, { name, phone, createdAt: new Date().toISOString() }, { onlyIfNew: true });
+    if (result && result.modified === false) return json({ error: "Slot taken" }, 409);
     return json({ ok: true }, 201);
   }
 
@@ -84,4 +99,4 @@ export default async (req) => {
   }
 
   return json({ error: "Method not allowed" }, 405);
-};
+}
