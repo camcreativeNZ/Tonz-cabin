@@ -11,10 +11,16 @@ const pad = (n) => String(n).padStart(2, "0");
 function validSlots() {
   const out = [];
   for (let t = 9 * 60; t + 15 <= 12 * 60; t += 15) out.push(`${pad(Math.floor(t / 60))}:${pad(t % 60)}`);
-  for (let t = 13 * 60; t + 20 <= 16 * 60 + 30; t += 20) out.push(`${pad(Math.floor(t / 60))}:${pad(t % 60)}`);
+  for (let t = 12 * 60; t + 20 <= 17 * 60; t += 20) out.push(`${pad(Math.floor(t / 60))}:${pad(t % 60)}`);
   return out;
 }
 const SLOTS = validSlots();
+const DAYS_AHEAD = 7; // rolling window: today up to the same weekday next week
+
+function addDays(s, n) {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
 
 function nzToday() {
   const p = {};
@@ -148,6 +154,7 @@ async function handleBookings(req) {
     const phone = String(body.phone || "").trim().slice(0, 30);
     if (!validDate(date) || !SLOTS.includes(time) || name.length < 2) return json({ error: "Invalid booking" }, 400);
     if (date < nzToday()) return json({ error: "Date in the past" }, 400);
+    if (date > addDays(nzToday(), DAYS_AHEAD)) return json({ error: "Bookings open one week ahead" }, 400);
     // Fridays are mornings only
     const [fy, fm, fd] = date.split("-").map(Number);
     if (new Date(Date.UTC(fy, fm - 1, fd)).getUTCDay() === 5 && time >= "12:00") return json({ error: "Fridays are mornings only" }, 400);
