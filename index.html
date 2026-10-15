@@ -18,6 +18,13 @@ header{background:var(--brand);color:#fff;text-align:center;padding:22px 16px;po
 header h1{margin:0;font-size:1.7rem;letter-spacing:.06em;text-transform:uppercase}
 header h1 span{color:var(--accent)}
 header p{margin:6px 0 0;color:#d8d3c8;font-size:.95rem}
+header .addr{display:inline-block;margin-top:6px;color:#f0ebe0;font-size:.95rem;text-decoration:none}
+header .addr:hover{text-decoration:underline}
+.map{grid-column:1/-1}
+.map .where{margin:0 0 10px;color:var(--muted)}
+.mapwrap{border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.mapwrap iframe{display:block;width:100%;height:320px;border:0}
+.dirbtn{display:inline-block;margin-top:12px;padding:12px 18px;border-radius:10px;background:var(--brand);color:#fff;text-decoration:none;font-weight:700}
 main{max-width:960px;margin:0 auto;padding:16px;display:grid;gap:16px}
 @media(min-width:800px){main{grid-template-columns:380px 1fr;align-items:start;padding:24px}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
@@ -70,6 +77,7 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
 <header>
   <a class="adminlink" href="/admin.html">Barber login</a>
   <h1>Tonz <span>Cabin</span></h1>
+  <a class="addr" href="https://www.google.com/maps/search/?api=1&amp;query=197+Dixon+Street%2C+Masterton%2C+New+Zealand" target="_blank" rel="noopener">&#128205; 197 Dixon Street, Masterton, New Zealand</a>
   <p>Book your haircut &middot; Tue–Fri</p>
 </header>
 
@@ -83,12 +91,22 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
     </div>
     <div class="grid" id="dows"></div>
     <div class="grid" id="days"></div>
-    <p class="hint">Green days are open for booking (Tuesday to Friday). Fridays are mornings only.</p>
+    <p class="hint">Green days are open for booking (Tuesday to Friday, up to one week ahead). Fridays are mornings only.</p>
   </section>
 
   <section class="card">
     <h2>2. Pick a time</h2>
     <div id="slotArea"><div class="empty">Select a day on the calendar to see times.</div></div>
+  </section>
+
+  <section class="card map">
+    <h2>Find us</h2>
+    <p class="where">197 Dixon Street, Masterton, New Zealand</p>
+    <div class="mapwrap">
+      <iframe title="Map showing Tonz Cabin at 197 Dixon Street, Masterton" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+        src="https://www.google.com/maps?q=197+Dixon+Street,+Masterton,+New+Zealand&amp;output=embed"></iframe>
+    </div>
+    <a class="dirbtn" href="https://www.google.com/maps/dir/?api=1&amp;destination=197+Dixon+Street%2C+Masterton%2C+New+Zealand" target="_blank" rel="noopener">Get directions</a>
   </section>
 </main>
 <footer>Tonz Cabin &middot; Times are New Zealand time</footer>
@@ -101,7 +119,7 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
 (function(){
   var TZ = 'Pacific/Auckland';
   var OPEN_DOW = [2,3,4,5]; // Tue..Fri
-  var MAX_MONTHS_AHEAD = 3;
+  var DAYS_AHEAD = 7; // rolling window: today up to the same weekday next week
   var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   var DOWS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
@@ -117,10 +135,12 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
   function dowOf(y,m,d){return new Date(Date.UTC(y,m,d)).getUTCDay()}
   function fmt(t){var h=+t.slice(0,2),mm=t.slice(3);var s=h>=12?'pm':'am';h=h%12||12;return h+':'+mm+' '+s}
 
+  function addDays(s,n){var p=s.split('-').map(Number);return new Date(Date.UTC(p[0],p[1]-1,p[2]+n)).toISOString().slice(0,10)}
+
   function buildSlots(){
     var morning=[],afternoon=[],t;
     for(t=9*60;t+15<=12*60;t+=15) morning.push(pad(Math.floor(t/60))+':'+pad(t%60));
-    for(t=13*60;t+20<=16*60+30;t+=20) afternoon.push(pad(Math.floor(t/60))+':'+pad(t%60));
+    for(t=12*60;t+20<=17*60;t+=20) afternoon.push(pad(Math.floor(t/60))+':'+pad(t%60));
     return {morning:morning,afternoon:afternoon};
   }
   var SLOTS = buildSlots();
@@ -165,10 +185,13 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
   function lastDayOfMonth(y,m){return new Date(Date.UTC(y,m+1,0)).getUTCDate()}
 
   function renderCal(){
+    now = nzNow();
+    var maxStr = addDays(ds(now.y,now.m,now.d),DAYS_AHEAD);
+    var mp = maxStr.split('-').map(Number);
     document.getElementById('monthLabel').textContent = MONTHS[view.m]+' '+view.y;
     var diff=(view.y-now.y)*12+(view.m-now.m);
     document.getElementById('prev').disabled = diff<=0;
-    document.getElementById('next').disabled = diff>=MAX_MONTHS_AHEAD;
+    document.getElementById('next').disabled = (view.y-mp[0])*12+(view.m-(mp[1]-1))>=0;
     daysEl.innerHTML='';
     var offset=(dowOf(view.y,view.m,1)+6)%7;
     for(var i=0;i<offset;i++) daysEl.appendChild(document.createElement('div'));
@@ -176,8 +199,8 @@ footer{text-align:center;color:var(--muted);font-size:.8rem;padding:10px 16px 30
       (function(d){
         var b=document.createElement('button');
         b.type='button';b.textContent=d;b.className='day';
-        var open=isOpenDay(view.y,view.m,d)&&!isPast(view.y,view.m,d);
         var s=ds(view.y,view.m,d);
+        var open=isOpenDay(view.y,view.m,d)&&!isPast(view.y,view.m,d)&&s<=maxStr;
         if(open){b.classList.add('open');b.onclick=function(){selected=s;renderCal();renderSlots()}}
         else b.disabled=true;
         if(s===ds(now.y,now.m,now.d)) b.classList.add('today');
