@@ -1,5 +1,6 @@
 import { getStore } from "@netlify/blobs";
 import { scryptSync, randomBytes, timingSafeEqual } from "node:crypto";
+import { smsConfigured, normalizePhone } from "../lib/sms.mjs";
 
 export const config = { path: ["/api/bookings", "/api/admin"] };
 
@@ -125,6 +126,8 @@ async function handleBookings(req) {
   const url = new URL(req.url);
 
   if (req.method === "GET") {
+    // Public: tells the booking page whether to offer text reminders
+    if (url.searchParams.get("config") === "1") return json({ sms: smsConfigured() });
     // Admin: list everything with names
     if (url.searchParams.get("all") === "1") {
       const auth = await authorize(req);
@@ -134,7 +137,7 @@ async function handleBookings(req) {
       for (const b of blobs) {
         const v = await store.get(b.key, { type: "json" });
         const [date, time] = b.key.split("/");
-        if (v) rows.push({ date, time, name: v.name, phone: v.phone || "" });
+        if (v) rows.push({ date, time, name: v.name, phone: v.phone || "", sms: !!v.sms, reminded: !!v.reminded });
       }
       rows.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
       return json({ bookings: rows.filter((r) => r.date >= nzToday()), today: nzToday() });
@@ -152,6 +155,13 @@ async function handleBookings(req) {
     const { date, time } = body;
     const name = String(body.name || "").trim().slice(0, 60);
     const phone = String(body.phone || "").trim().slice(0, 30);
+    const wantSms = body.sms === true;
+    let smsTo = null;
+    if (wantSms) {
+      if (!smsConfigured()) return json({ error: "Text reminders are not available right now." }, 400);
+      smsTo = normalizePhone(phone);
+      if (!smsTo) return json({ error: "Please enter a valid mobile number so we can text you." }, 400);
+    }
     if (!validDate(date) || !SLOTS.includes(time) || name.length < 2) return json({ error: "Invalid booking" }, 400);
     if (date < nzToday()) return json({ error: "Date in the past" }, 400);
     if (date > addDays(nzToday(), DAYS_AHEAD)) return json({ error: "Bookings open one week ahead" }, 400);
@@ -165,7 +175,8 @@ async function handleBookings(req) {
     // onlyIfNew stops two people grabbing the same slot at the same instant.
     // Some library versions return nothing here, so only treat an explicit
     // modified:false as "taken"; anything else means the write succeeded.
-    const result = await store.setJSON(key, { name, phone, createdAt: new Date().toISOString() }, { onlyIfNew: true });
+    const record = { name, phone, createdAt: new Date().toISOString(), ...(wantSms ? { sms: true, smsTo } : {}) };
+    const result = await store.setJSON(key, record, { onlyIfNew: true });
     if (result && result.modified === false) return json({ error: "Slot taken" }, 409);
     return json({ ok: true }, 201);
   }
